@@ -1,21 +1,43 @@
 #include <Servo.h>
 #include <Arduino.h>
 
-Servo base_servo;  // create servo object to control a servo
+Servo base_servo;
 
-int POT_PIN = 0;  // analog pin used to connect the potentiometer
-int val;    // variable to read the value from the analog pin
+int base_pot_pin = 0;
+int arm_pot_pin = 1;
+
+int base_val;
+int arm_val;
+
+int smoothAnalogRead(int pin) {
+    int total = 0;
+    int readings = 10;
+    for (int i = 0; i < readings; i++) {
+        total += analogRead(pin);
+        delay(10);
+    }
+    return total / readings;
+}
 
 void setup() {
-    base_servo.attach(9);  // attaches the servo on pin 9 to the servo object
-    Serial.begin(9600);  // 设置波特率为9600
+    base_servo.attach(9);
+    Serial.begin(9600);
 }
 
 void loop() {
-    val = analogRead(POT_PIN);
-    // reads the value of the potentiometer (value between 0 and 1023)
-    val = map(val, 0, 1023, 0, 180);     // scale it to use it with the servo (value between 0 and 180)
-    base_servo.write(val);
-    Serial.println(val);                  // sets the servo position according to the scaled value·
-    delay(20);                           // waits for the servo to get there
+    base_val = smoothAnalogRead(base_pot_pin);
+    arm_val = smoothAnalogRead(arm_pot_pin);
+
+    base_val = map(base_val, 0, 1023, 0, 180);
+    arm_val = map(arm_val, 0, 1023, 0, 180);
+
+    base_servo.write(base_val);
+
+    Serial.print("Base Servo Value: ");
+    Serial.println(base_val);
+
+    Serial.print("Arm Servo Value: ");
+    Serial.println(arm_val);
+
+    delay(50);
 }
