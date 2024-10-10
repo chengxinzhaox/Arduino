@@ -1,29 +1,21 @@
+#include <Servo.h>
 #include <Arduino.h>
 
-boolean pushButton1;
-boolean pushButton2;
-int ledPin = 9;
-int brightness = 128;
+Servo base_servo;  // create servo object to control a servo
+
+int POT_PIN = 0;  // analog pin used to connect the potentiometer
+int val;    // variable to read the value from the analog pin
 
 void setup() {
-    pinMode(2, INPUT_PULLUP);
-    pinMode(8, INPUT_PULLUP);
-    pinMode(ledPin, OUTPUT);
-    Serial.begin(9600);
+    base_servo.attach(9);  // attaches the servo on pin 9 to the servo object
+    Serial.begin(9600);  // 设置波特率为9600
 }
 
-
 void loop() {
-    pushButton1 = digitalRead(2);
-    pushButton2 = digitalRead(8);
-
-    if (!pushButton1 && brightness > 0) {
-        brightness--;
-    } else if (!pushButton2 && brightness < 255) {
-        brightness++;
-    }
-
-    analogWrite(ledPin, brightness);
-    Serial.println(brightness);
-    delay(10);
+    val = analogRead(POT_PIN);
+    // reads the value of the potentiometer (value between 0 and 1023)
+    val = map(val, 0, 1023, 0, 180);     // scale it to use it with the servo (value between 0 and 180)
+    base_servo.write(val);
+    Serial.println(val);                  // sets the servo position according to the scaled value·
+    delay(20);                           // waits for the servo to get there
 }
