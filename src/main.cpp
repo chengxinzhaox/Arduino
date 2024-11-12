@@ -38,16 +38,25 @@ bool isLightOn = true;
 unsigned long lastStepTime = 0;
 const unsigned long stepInterval = 50; // 每次小角度旋转的间隔时间（50ms）
 
+unsigned long lastPrintTime = 0;
+const long printInterval = 2000; // 2秒打印一次
+
+// 太阳位置更新时间变量
+unsigned long lastSunUpdate = 0;
+const long sunUpdateInterval = 2000; // 每2秒更新一次太阳位置
+
 // 温湿度传感器的非阻塞读取时间变量
 unsigned long previousMillis = 0;
 const long interval = 2000; // 2000ms（2秒）读取一次温湿度
 
 // 环境温度控制参数
-const float optimalTemp = 25.0;     // 适宜温度
-const float tempRange = 5.0;        // 偏差范围 ±5°C
+const float optimalTemp = 25.0; // 适宜温度
+const float tempRange = 10.0; // 偏差范围 ±5°C
 
 // 状态变量
 String status = "";
+float sun_azimuth = 0.0;
+float sun_altitude = 0.0;
 
 // Function to move stepper by small increments towards a target angle
 bool moveStepperByAngle(Stepper &stepper, float &position, float &target, int speed) {
@@ -77,6 +86,13 @@ void resetStepperToZero(Stepper &stepper, float &position, float &target, int sp
     moveStepperByAngle(stepper, position, target, speed);
 }
 
+// Function to update target angles based on sun's azimuth and altitude
+void updateSunPosition() {
+    // 计算并更新 base 和 arm 的目标角度
+    base_target = sun_azimuth; // base 跟随太阳的方位角
+    arm_target = map(sun_altitude, 0, 90, 10, 0); // arm 根据高度角调整，0度时为水平，15度为低头
+}
+
 void setup() {
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
     FastLED.setBrightness(brightness);
@@ -89,8 +105,26 @@ void setup() {
 }
 
 void loop() {
-    // 使用 millis() 来实现非阻塞式的温湿度读取
     unsigned long currentMillis = millis();
+
+    // 打印当前角度信息，每2秒更新一次
+    if (currentMillis - lastPrintTime >= printInterval) {
+        lastPrintTime = currentMillis;
+        Serial.print("Head target:");
+        Serial.println(head_target);
+        Serial.print("Base target:");
+        Serial.println(base_target);
+        Serial.print("Arm target:");
+        Serial.println(arm_target);
+    }
+
+    // 当状态为 "sun" 时，每2秒更新太阳位置
+    if (status == "sun" && currentMillis - lastSunUpdate >= sunUpdateInterval) {
+        lastSunUpdate = currentMillis;
+        updateSunPosition(); // 更新 base 和 arm 的目标角度
+    }
+
+    // 使用 millis() 来实现非阻塞式的温湿度读取
     if (currentMillis - previousMillis >= interval) {
         previousMillis = currentMillis;
 
@@ -109,23 +143,21 @@ void loop() {
             if (status == "environment") {
                 float deviation = abs(temperature - optimalTemp);
                 if (deviation >= tempRange) {
-                    // 温度偏离适宜范围，花朵完全关闭，arm 角度设为 45 度
-                    head_target = 0;  // 花朵完全关闭
-                    arm_target = 45;  // arm 低头
-                    FastLED.setBrightness(50);  // 调暗 LED
+                    // 温度偏离适宜范围，花朵完全关闭，arm 角度设为 15 度
+                    head_target = 0; // 花朵完全关闭
+                    arm_target = 10; // arm 低头
+                    FastLED.setBrightness(50); // 调暗 LED
                     Serial.println("Temperature out of range: closing flower and lowering arm.");
                 } else {
                     // 温度在适宜范围内，根据偏差调整花朵开合比例和 arm 角度
-                    float openness = 1.0 - (deviation / tempRange);  // 计算花朵开合比例
-                    head_target = openness * 1080;  // 花朵的开合角度
-                    arm_target = openness * 0;     // arm 角度接近水平
-                    FastLED.setBrightness(255 * openness);  // LED 亮度随开合程度
+                    float openness = 1.0 - (deviation / tempRange); // 计算花朵开合比例
+                    head_target = openness * -360; // 花朵的开合角度
+                    arm_target = openness * 10; // arm 角度接近水平
+                    FastLED.setBrightness(255 * openness); // LED 亮度随开合程度
                     Serial.print("Temperature within range: flower openness ");
                     Serial.println(openness * 100, 1);
                 }
                 FastLED.show();
-            } else if (status == "sun") {
-
             }
         }
     }
@@ -150,7 +182,7 @@ void loop() {
         } else if (command == "power") {
             if (value == "on") {
                 isLightOn = true;
-                FastLED.setBrightness(brightness); // 恢复到之前亮度
+                FastLED.setBrightness(brightness);
                 FastLED.show();
             } else if (value == "off") {
                 isLightOn = false;
@@ -161,19 +193,31 @@ void loop() {
             if (value == "interactive") {
                 status = "interactive";
             } else if (value == "no") {
-                resetStepperToZero(base_stepper, base_position, base_target, 800);
-                resetStepperToZero(arm_stepper, arm_position, arm_target, 800);
-                resetStepperToZero(head_stepper, head_position, head_target, 800);
+                head_target = 0;
+                base_target = 0;
+                arm_target = 0;
                 status = "";
             } else if (value == "sun") {
                 status = "sun";
             } else if (value == "environment") {
                 status = "environment";
             } else if (value == "open") {
-                head_target = 360*3;
+                arm_target = arm_position - 10;
             } else if (value == "close") {
-                head_target = -360*3;
+                arm_target = arm_position + 10;
+            } else if (value == "reset") {
+                head_position = 0;
+                head_target = 0;
             }
+        } else if (command == "sunpos") {
+            // 解析并更新太阳位置
+            int commaIndex = value.indexOf(',');
+            sun_azimuth = value.substring(0, commaIndex).toFloat();
+            sun_altitude = value.substring(commaIndex + 1).toFloat();
+            Serial.print("Received sun position - Azimuth: ");
+            Serial.print(sun_azimuth);
+            Serial.print(", Altitude: ");
+            Serial.println(sun_altitude);
         }
 
         Serial.print("Status: ");
@@ -185,12 +229,12 @@ void loop() {
             if (emoValue == 1) {
                 FastLED.setBrightness(255);
                 FastLED.show();
-                head_target = 360;
+                head_target = -360;
                 Serial.println("Flower opened and LED at full brightness.");
             } else if (emoValue == 2) {
                 FastLED.setBrightness(50); // 调暗 LED 亮度
                 FastLED.show();
-                head_target = -360;
+                head_target = 0;
                 Serial.println("Flower closed and LED dimmed.");
             }
         }
